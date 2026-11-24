@@ -1,99 +1,84 @@
 package com.jvchannel48.hotspotcontrol;
 
 import android.app.Activity;
-import android.content.Intent;
+import android.os.Bundle;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
-import android.media.MediaPlayer;
-import android.net.Uri;
-import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
-import android.view.ViewGroup;
 import android.widget.*;
-import java.util.ArrayList;
-import java.util.Locale;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
+import android.webkit.WebChromeClient;
+import android.content.Intent;
+import android.net.Uri;
+import java.util.*;
 
 public class MainActivity extends Activity {
-    private static final int YELLOW=Color.rgb(255,211,35), BLACK=Color.rgb(8,9,11), PANEL=Color.rgb(24,26,30), WHITE=Color.WHITE, MUTED=Color.LTGRAY;
-    private final ArrayList<Song> songs=new ArrayList<>();
-    private LinearLayout root, list, nowPlaying;
-    private EditText search;
-    private MediaPlayer player;
-    private Uri currentUri;
-    private TextView playingTitle, lyric;
-    private int currentIndex=-1;
-    private boolean videoMode=false;
-    private VideoView video;
-
-    static class Song {
-        String number,title,artist;
-        Uri uri;
-        Song(String n,String t,String a){number=n;title=t;artist=a;}
+  private final int BG=Color.rgb(9,12,18), PANEL=Color.rgb(22,29,40), CYAN=Color.rgb(40,210,220), WHITE=Color.WHITE, MUTED=0xffaab6c5;
+  private LinearLayout root, list;
+  private EditText search;
+  private WebView web;
+  private TextView status;
+  static class CameraSource {
+    String name, area, kind, url, note;
+    CameraSource(String n,String a,String k,String u,String d){name=n;area=a;kind=k;url=u;note=d;}
+  }
+  private final ArrayList<CameraSource> cameras=new ArrayList<>();
+  private int dp(float n){return (int)(n*getResources().getDisplayMetrics().density+.5f);}
+  private GradientDrawable bg(int c,int r,int stroke){GradientDrawable d=new GradientDrawable();d.setColor(c);d.setCornerRadius(dp(r));if(stroke>0)d.setStroke(dp(1),CYAN);return d;}
+  private TextView txt(String s,int z,int c,boolean b){TextView t=new TextView(this);t.setText(s);t.setTextSize(z);t.setTextColor(c);if(b)t.setTypeface(Typeface.DEFAULT,Typeface.BOLD);return t;}
+  private LinearLayout col(){LinearLayout l=new LinearLayout(this);l.setOrientation(1);return l;}
+  private Button btn(String s){Button b=new Button(this);b.setText(s);b.setAllCaps(false);b.setTextColor(BG);b.setTypeface(null,Typeface.BOLD);b.setBackground(bg(CYAN,14,0));return b;}
+  @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().setStatusBarColor(BG);getWindow().setNavigationBarColor(BG);seed();home();}
+  private void seed(){
+    cameras.add(new CameraSource("Philippines Public Camera Map","Pilipinas","PUBLIC CAMERA DIRECTORY","https://www.argosatlas.com/en/cameras/philippines/","Browse public camera points. Some show still frames, not continuous video."));
+    cameras.add(new CameraSource("WorldCam Philippines","Pilipinas","WEBCAM DIRECTORY","https://worldcam.eu/","Publicly listed webcams. Choose a camera and check its live status on the provider page."));
+    cameras.add(new CameraSource("Davao Area Street Cameras","Davao City","CAMERA INDEX","https://www.argosatlas.com/en/cameras/philippines/","Open the public Philippines camera map and browse Davao entries."));
+    cameras.add(new CameraSource("El Nido Public Webcam","Palawan","SCENIC WEBCAM","https://www.argosatlas.com/en/cameras/philippines/","Look for El Nido public webcam entries; availability is controlled by the camera publisher."));
+    cameras.add(new CameraSource("Philippines Traffic & Road Views","Pilipinas","ROAD CAMERA DIRECTORY","https://lagayngdaan.com/fil/mga-kamera/","External public camera and road-source directory. Camera status must be checked at the original site."));
+    cameras.add(new CameraSource("MMDA Traffic Information","Metro Manila","OFFICIAL TRAFFIC UPDATES","https://mmda.gov.ph/","Official MMDA information and advisories. Direct MMDA CCTV streams are not offered here."));
+    cameras.add(new CameraSource("Pasig City DRRMO","Pasig City","OFFICIAL CITY CCTV INFO","https://pasigcity.gov.ph/services","City CCTV is monitored by DRRMO; public access is by request for incidents, not an open live stream."));
+    cameras.add(new CameraSource("Muntinlupa CCTV Footage Request","Muntinlupa","OFFICIAL CITY CCTV INFO","https://ddrm.muntinlupacity.gov.ph/cctv-footage-request/","Official process to request CCTV footage for legitimate purposes."));
+  }
+  private void home(){
+    root=col();root.setBackgroundColor(BG);
+    LinearLayout header=col();header.setPadding(dp(18),dp(22),dp(18),dp(18));header.setBackground(bg(PANEL,0,0));
+    TextView brand=txt("RJ PUBLIC CCTV",25,WHITE,true);header.addView(brand);
+    TextView sub=txt("PUBLIC CAMERAS • TRAFFIC • CITY WEBCAMS",11,CYAN,true);sub.setPadding(0,dp(6),0,dp(10));header.addView(sub);
+    TextView info=txt("Pumili ng camera source para buksan ang video o live view sa mismong publisher.",14,MUTED,false);header.addView(info);
+    root.addView(header);
+    search=new EditText(this);search.setSingleLine(true);search.setTextColor(WHITE);search.setHintTextColor(MUTED);search.setHint("Search camera, city o area");search.setTextSize(15);search.setPadding(dp(16),0,dp(12),0);search.setBackground(bg(PANEL,15,0));
+    LinearLayout.LayoutParams sp=new LinearLayout.LayoutParams(-1,dp(52));sp.setMargins(dp(14),dp(14),dp(14),dp(8));root.addView(search,sp);
+    status=txt("PUBLIC SOURCES • EXTERNAL VIDEO",11,CYAN,true);status.setPadding(dp(18),dp(8),dp(18),dp(8));root.addView(status);
+    ScrollView scroll=new ScrollView(this);list=col();list.setPadding(dp(12),0,dp(12),dp(20));scroll.addView(list);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+    search.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int c,int a){}public void onTextChanged(CharSequence s,int st,int before,int count){render(s.toString());}public void afterTextChanged(android.text.Editable e){}});
+    render("");
+  }
+  private void render(String q){
+    list.removeAllViews();String n=q.toLowerCase(Locale.ROOT).trim();int shown=0;
+    for(CameraSource c:cameras){if(!(c.name+" "+c.area+" "+c.kind+" "+c.note).toLowerCase(Locale.ROOT).contains(n))continue;
+      LinearLayout card=col();card.setPadding(dp(15),dp(14),dp(15),dp(14));card.setBackground(bg(PANEL,17,0));
+      LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,-2);cp.setMargins(dp(2),dp(5),dp(2),dp(7));list.addView(card,cp);
+      TextView tag=txt(c.kind,10,CYAN,true);card.addView(tag);
+      TextView title=txt(c.name,18,WHITE,true);title.setPadding(0,dp(5),0,dp(3));card.addView(title);
+      TextView area=txt("⌖  "+c.area,12,0xffc6d1df,true);card.addView(area);
+      TextView note=txt(c.note,13,MUTED,false);note.setPadding(0,dp(8),0,dp(10));card.addView(note);
+      Button open=btn("OPEN CAMERA / VIEW  →");card.addView(open,new LinearLayout.LayoutParams(-1,dp(46)));open.setOnClickListener(v->viewCamera(c));
+      shown++;
     }
-    private int dp(float n){return (int)(n*getResources().getDisplayMetrics().density+.5f);}
-    private GradientDrawable shape(int color,int radius,int stroke){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));if(stroke>0)d.setStroke(dp(2),YELLOW);return d;}
-    private TextView text(String s,int size,int color,boolean bold){TextView t=new TextView(this);t.setText(s);t.setTextSize(size);t.setTextColor(color);if(bold)t.setTypeface(Typeface.DEFAULT,Typeface.BOLD);return t;}
-    private LinearLayout vertical(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);return l;}
-    private Button button(String s){Button b=new Button(this);b.setText(s);b.setTextColor(BLACK);b.setTextSize(14);b.setAllCaps(false);b.setTypeface(Typeface.DEFAULT,Typeface.BOLD);b.setBackground(shape(YELLOW,14,0));return b;}
-
-    @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().setStatusBarColor(BLACK);getWindow().setNavigationBarColor(BLACK);seed();build();}
-    private void seed(){
-        songs.add(new Song("00001","Amazing Grace","Traditional"));
-        songs.add(new Song("00002","Auld Lang Syne","Traditional"));
-        songs.add(new Song("00003","Oh! Susanna","Stephen Foster"));
-        songs.add(new Song("00004","When the Saints Go Marching In","Traditional"));
-        songs.add(new Song("00005","Danny Boy","Traditional"));
-        songs.add(new Song("00006","Greensleeves","Traditional"));
-        songs.add(new Song("00007","House of the Rising Sun","Traditional"));
-        songs.add(new Song("00008","The Water Is Wide","Traditional"));
-        songs.add(new Song("00009","Shenandoah","Traditional"));
-        songs.add(new Song("00010","Home on the Range","Traditional"));
-    }
-    private void build(){
-        root=vertical();root.setBackgroundColor(BLACK);
-        LinearLayout top=vertical();top.setPadding(dp(16),dp(12),dp(16),dp(10));
-        LinearLayout banner=vertical();banner.setBackground(shape(Color.argb(220,12,13,15),22,2));banner.setClipToOutline(true);
-        LinearLayout titleRow=new LinearLayout(this);titleRow.setGravity(Gravity.CENTER_VERTICAL);titleRow.setPadding(dp(18),dp(12),dp(16),dp(10));
-        TextView note=text("♫",30,YELLOW,true);titleRow.addView(note);TextView heading=text("  NEW SONG",23,WHITE,true);heading.setTypeface(Typeface.create("sans-serif",Typeface.BOLD_ITALIC));titleRow.addView(heading);
-        banner.addView(titleRow);View line=new View(this);line.setBackgroundColor(YELLOW);banner.addView(line,new LinearLayout.LayoutParams(-1,dp(2)));
-        LinearLayout newSongs=vertical();newSongs.setPadding(dp(14),dp(4),dp(14),dp(8));
-        String[][] latest={{"10143","Na Para Bang","Mariah Deborah"},{"10182","SIGABO","Yeng Constantino"},{"27602","Multo","Cup of Joe"},{"28023","Pahina","Cup of Joe"},{"27764","Sarangola","Ben&Ben"},{"28430","Kalapastangan","Fitterkarma"},{"25022","Saksi Ang Langit","December Avenue"},{"28495","Libu-Libong Buwan (Uuwian)","Kyle Raphael"},{"28574","Ikaw Lang Patutunguhan","Amiel Sol"},{"27727","Nailang","Le John"}};
-        for(String[] row:latest){LinearLayout r=new LinearLayout(this);r.setGravity(Gravity.CENTER_VERTICAL);r.setPadding(dp(2),dp(9),dp(2),dp(9));
-            TextView n=text(row[0],15,WHITE,true);n.setWidth(dp(82));r.addView(n);
-            TextView t=text(row[1],15,WHITE,true);t.setLayoutParams(new LinearLayout.LayoutParams(0,-2,1));r.addView(t);
-            TextView a=text(row[2],15,YELLOW,true);a.setGravity(Gravity.RIGHT);r.addView(a);
-            newSongs.addView(r);View divider=new View(this);divider.setBackgroundColor(0x66777777);newSongs.addView(divider,new LinearLayout.LayoutParams(-1,dp(1)));
-        }
-        banner.addView(newSongs);TextView foot=text("▰ ▰ ▰     ♫     ▰ ▰ ▰",17,YELLOW,true);foot.setGravity(Gravity.CENTER);foot.setPadding(0,dp(4),0,dp(8));banner.addView(foot);
-        top.addView(banner);root.addView(top);
-        LinearLayout searchRow=new LinearLayout(this);searchRow.setGravity(Gravity.CENTER_VERTICAL);searchRow.setPadding(dp(14),dp(10),dp(14),dp(8));
-        Button close=button("×");close.setTextSize(24);searchRow.addView(close,new LinearLayout.LayoutParams(dp(54),dp(54)));close.setOnClickListener(v->{search.setText("");});
-        search=new EditText(this);search.setSingleLine(true);search.setTextColor(WHITE);search.setHintTextColor(0xffa7a7a7);search.setHint("⌕  Title, artist or number");search.setTextSize(16);search.setPadding(dp(16),0,dp(12),0);search.setBackground(shape(PANEL,18,0));LinearLayout.LayoutParams ep=new LinearLayout.LayoutParams(0,dp(54),1);ep.leftMargin=dp(12);searchRow.addView(search,ep);root.addView(searchRow);
-        search.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int c,int a){}public void onTextChanged(CharSequence s,int st,int before,int count){render(s.toString());}public void afterTextChanged(android.text.Editable e){}});
-        View sep=new View(this);sep.setBackgroundColor(0xff303238);root.addView(sep,new LinearLayout.LayoutParams(-1,dp(1)));
-        ScrollView scroll=new ScrollView(this);list=vertical();list.setPadding(dp(16),dp(4),dp(16),dp(10));scroll.addView(list);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
-        nowPlaying=vertical();nowPlaying.setPadding(dp(16),dp(10),dp(16),dp(12));nowPlaying.setBackgroundColor(0xff101115);
-        playingTitle=text("VIDEO KARAOKE • SONGBOOK",16,YELLOW,true);nowPlaying.addView(playingTitle);
-        lyric=text("Pumili ng kanta o magdagdag ng sarili mong audio/video file.",18,WHITE,true);lyric.setGravity(Gravity.CENTER);lyric.setPadding(dp(8),dp(16),dp(8),dp(16));nowPlaying.addView(lyric);
-        LinearLayout controls=new LinearLayout(this);controls.setGravity(Gravity.CENTER);String[] names={"|◀","▶","Ⅱ","■","▶|","＋ FILE"};for(String name:names){Button b=button(name);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,dp(48),name.equals("＋ FILE")?1.5f:1);p.setMargins(dp(3),0,dp(3),0);controls.addView(b,p);b.setOnClickListener(v->control(name));}nowPlaying.addView(controls);
-        root.addView(nowPlaying);setContentView(root);render("");
-    }
-    private void render(String q){if(list==null)return;list.removeAllViews();String needle=q.toLowerCase(Locale.ROOT).trim();int count=0;
-        for(int i=0;i<songs.size();i++){Song s=songs.get(i);if(!(s.number+" "+s.title+" "+s.artist).toLowerCase(Locale.ROOT).contains(needle))continue;final int index=i;
-            LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(6),dp(12),dp(6),dp(12));
-            TextView num=text(s.number,15,YELLOW,false);num.setWidth(dp(78));row.addView(num);
-            LinearLayout details=vertical();details.addView(text(s.title,18,WHITE,false));details.addView(text(s.artist,14,0xffaaaaaa,false));row.addView(details,new LinearLayout.LayoutParams(0,-2,1));
-            TextView play=text(s.uri==null?"＋":"▶",20,YELLOW,true);row.addView(play);row.setOnClickListener(v->{if(s.uri!=null)playSong(index);else chooseMedia(index);});list.addView(row);
-            View divider=new View(this);divider.setBackgroundColor(0xff303238);list.addView(divider,new LinearLayout.LayoutParams(-1,dp(1)));count++;
-        }
-        if(count==0){TextView empty=text("Walang kanta. Magdagdag ng audio/video file.",15,MUTED,false);empty.setPadding(dp(8),dp(24),0,dp(24));list.addView(empty);}
-    }
-    private void chooseMedia(int index){currentIndex=index;Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("*/*");i.putExtra(Intent.EXTRA_MIME_TYPES,new String[]{"audio/*","video/*"});i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,41);}
-    @Override protected void onActivityResult(int req,int res,Intent data){super.onActivityResult(req,res,data);if(req==41&&res==RESULT_OK&&data!=null&&data.getData()!=null){Uri u=data.getData();getContentResolver().takePersistableUriPermission(u,Intent.FLAG_GRANT_READ_URI_PERMISSION);songs.get(currentIndex).uri=u;playSong(currentIndex);render(search.getText().toString());}}
-    private void playSong(int index){currentIndex=index;Song s=songs.get(index);playingTitle.setText(s.title+"  •  "+s.artist);lyric.setText("♫  "+s.title+"  ♫\n\nLyrics file can be added with the song.");String type=getContentResolver().getType(s.uri);videoMode=type!=null&&type.startsWith("video");if(videoMode){if(player!=null){player.release();player=null;}if(video==null){video=new VideoView(this);nowPlaying.addView(video,1,new LinearLayout.LayoutParams(-1,dp(180)));}video.setVisibility(View.VISIBLE);video.setVideoURI(s.uri);video.setOnPreparedListener(mp->video.start());}else{if(video!=null)video.setVisibility(View.GONE);try{if(player!=null)player.release();player=new MediaPlayer();player.setDataSource(this,s.uri);player.setOnPreparedListener(mp->mp.start());player.setOnErrorListener((mp,w,e)->{toast("Hindi mabuksan ang audio file.");return true;});player.prepareAsync();}catch(Exception e){toast("Hindi mabuksan ang audio file.");}}}
-    private void control(String action){if(action.equals("＋ FILE")){chooseMedia(Math.max(0,currentIndex));return;}try{if(action.equals("▶")){if(videoMode&&video!=null)video.start();else if(player!=null)player.start();}else if(action.equals("Ⅱ")){if(videoMode&&video!=null)video.pause();else if(player!=null&&player.isPlaying())player.pause();}else if(action.equals("■")){if(videoMode&&video!=null)video.stopPlayback();else if(player!=null){player.stop();player.release();player=null;}}else if(action.equals("|◀")){if(currentIndex>0)playSong(currentIndex-1);}else if(action.equals("▶|")){if(currentIndex+1<songs.size())playSong(currentIndex+1);}}catch(Exception e){toast("Pumili muna ng kanta.");}}
-    private void toast(String s){Toast.makeText(this,s,Toast.LENGTH_SHORT).show();}
-    @Override protected void onDestroy(){super.onDestroy();if(player!=null){player.release();player=null;}}
+    if(shown==0){TextView empty=txt("Walang nahanap na camera source.",14,MUTED,false);empty.setPadding(dp(12),dp(25),dp(12),dp(25));list.addView(empty);}
+  }
+  private void viewCamera(CameraSource c){
+    root.removeAllViews();LinearLayout bar=new LinearLayout(this);bar.setGravity(Gravity.CENTER_VERTICAL);bar.setPadding(dp(10),dp(8),dp(10),dp(8));bar.setBackgroundColor(PANEL);
+    Button back=btn("← LIST");bar.addView(back);back.setOnClickListener(v->{if(web!=null){web.destroy();web=null;}home();});
+    TextView title=txt("  "+c.name,16,WHITE,true);bar.addView(title,new LinearLayout.LayoutParams(0,-2,1));root.addView(bar);
+    TextView disclaimer=txt("External public source • Live status and playback depend on publisher.",12,MUTED,false);disclaimer.setPadding(dp(12),dp(8),dp(12),dp(8));root.addView(disclaimer);
+    web=new WebView(this);web.getSettings().setJavaScriptEnabled(true);web.getSettings().setDomStorageEnabled(true);web.getSettings().setMediaPlaybackRequiresUserGesture(false);web.setWebChromeClient(new WebChromeClient());web.setWebViewClient(new WebViewClient(){@Override public boolean shouldOverrideUrlLoading(WebView v,String u){return false;}});
+    root.addView(web,new LinearLayout.LayoutParams(-1,0,1));web.loadUrl(c.url);
+    Button external=btn("OPEN IN BROWSER");LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(-1,dp(48));p.setMargins(dp(12),dp(8),dp(12),dp(10));root.addView(external,p);external.setOnClickListener(v->{try{startActivity(new Intent(Intent.ACTION_VIEW,Uri.parse(c.url)));}catch(Exception e){Toast.makeText(this,"Walang browser na ma-open.",Toast.LENGTH_SHORT).show();}});
+  }
+  @Override public void onBackPressed(){if(web!=null){web.destroy();web=null;home();}else super.onBackPressed();}
+  @Override protected void onDestroy(){if(web!=null)web.destroy();super.onDestroy();}
 }

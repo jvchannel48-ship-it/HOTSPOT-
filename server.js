@@ -76,7 +76,7 @@ app.get("/healthz", (_req, res) => {
 // Keyless public Cinemeta metadata proxy (no TMDB token required).
 app.get("/api/cinemeta/*", async (req, res) => {
   const requestedPath = req.params[0] || "";
-  if (!/^(catalog|meta)\/[a-zA-Z0-9_./=-]+\.json$/.test(requestedPath) ||
+  if (!/^(catalog|meta)\/[a-zA-Z0-9_./=%+-]+\.json$/.test(requestedPath) ||
       requestedPath.includes("..")) {
     return res.status(400).json({ error: "Invalid Cinemeta path." });
   }

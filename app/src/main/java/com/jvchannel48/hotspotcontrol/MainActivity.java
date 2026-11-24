@@ -1,150 +1,99 @@
 package com.jvchannel48.hotspotcontrol;
 
 import android.app.Activity;
-import android.app.AlertDialog;
-import android.content.SharedPreferences;
+import android.content.Intent;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.media.MediaPlayer;
+import android.net.Uri;
 import android.os.Bundle;
-import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.webkit.WebChromeClient;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
 import android.widget.*;
-import org.json.JSONArray;
-import org.json.JSONObject;
-import java.net.HttpURLConnection;
-import java.net.URLEncoder;
-import java.net.URL;
-import java.io.ByteArrayOutputStream;
-import java.io.InputStream;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.ArrayList;
+import java.util.Locale;
 
 public class MainActivity extends Activity {
-    private static final String API = "https://cine-ko-api.onrender.com/api/tmdb/3";
-    private static final String IMG = "https://image.tmdb.org/t/p/w500";
-    private static final int BG = Color.rgb(10, 12, 19), PANEL = Color.rgb(25, 29, 41), WHITE = Color.WHITE, MUTED = Color.rgb(166, 174, 191), ACCENT = Color.rgb(229, 31, 67);
-    private final ExecutorService worker = Executors.newSingleThreadExecutor();
-    private SharedPreferences prefs;
-    private LinearLayout root, content, header;
-    private String tab = "Home", currentType = "movie", query = "";
-    private JSONArray currentEpisodes = new JSONArray();
-    private int episodeIndex = -1;
-    private JSONObject currentShow;
-    private TextView status;
+    private static final int YELLOW=Color.rgb(255,211,35), BLACK=Color.rgb(8,9,11), PANEL=Color.rgb(24,26,30), WHITE=Color.WHITE, MUTED=Color.LTGRAY;
+    private final ArrayList<Song> songs=new ArrayList<>();
+    private LinearLayout root, list, nowPlaying;
+    private EditText search;
+    private MediaPlayer player;
+    private Uri currentUri;
+    private TextView playingTitle, lyric;
+    private int currentIndex=-1;
+    private boolean videoMode=false;
+    private VideoView video;
 
-    private int dp(float n) { return (int)(n * getResources().getDisplayMetrics().density + .5f); }
-    private GradientDrawable bg(int color, int radius) { GradientDrawable d = new GradientDrawable(); d.setColor(color); d.setCornerRadius(dp(radius)); return d; }
-    private TextView label(String s, int size, int color, boolean bold) {
-        TextView t = new TextView(this); t.setText(s); t.setTextSize(size); t.setTextColor(color);
-        if (bold) t.setTypeface(Typeface.DEFAULT, Typeface.BOLD); return t;
+    static class Song {
+        String number,title,artist;
+        Uri uri;
+        Song(String n,String t,String a){number=n;title=t;artist=a;}
     }
-    private LinearLayout column() { LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.VERTICAL); return l; }
-    private void space(LinearLayout p, int h) { View v = new View(this); p.addView(v, new LinearLayout.LayoutParams(1, dp(h))); }
-    private String apiKey() { return "server"; }
+    private int dp(float n){return (int)(n*getResources().getDisplayMetrics().density+.5f);}
+    private GradientDrawable shape(int color,int radius,int stroke){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));if(stroke>0)d.setStroke(dp(2),YELLOW);return d;}
+    private TextView text(String s,int size,int color,boolean bold){TextView t=new TextView(this);t.setText(s);t.setTextSize(size);t.setTextColor(color);if(bold)t.setTypeface(Typeface.DEFAULT,Typeface.BOLD);return t;}
+    private LinearLayout vertical(){LinearLayout l=new LinearLayout(this);l.setOrientation(LinearLayout.VERTICAL);return l;}
+    private Button button(String s){Button b=new Button(this);b.setText(s);b.setTextColor(BLACK);b.setTextSize(14);b.setAllCaps(false);b.setTypeface(Typeface.DEFAULT,Typeface.BOLD);b.setBackground(shape(YELLOW,14,0));return b;}
 
-    @Override public void onCreate(Bundle state) {
-        super.onCreate(state);
-        prefs = getSharedPreferences("cineko", MODE_PRIVATE);
-        getWindow().setStatusBarColor(BG); getWindow().setNavigationBarColor(BG);
-        showShell();
-        loadHome();
+    @Override public void onCreate(Bundle b){super.onCreate(b);getWindow().setStatusBarColor(BLACK);getWindow().setNavigationBarColor(BLACK);seed();build();}
+    private void seed(){
+        songs.add(new Song("00001","Amazing Grace","Traditional"));
+        songs.add(new Song("00002","Auld Lang Syne","Traditional"));
+        songs.add(new Song("00003","Oh! Susanna","Stephen Foster"));
+        songs.add(new Song("00004","When the Saints Go Marching In","Traditional"));
+        songs.add(new Song("00005","Danny Boy","Traditional"));
+        songs.add(new Song("00006","Greensleeves","Traditional"));
+        songs.add(new Song("00007","House of the Rising Sun","Traditional"));
+        songs.add(new Song("00008","The Water Is Wide","Traditional"));
+        songs.add(new Song("00009","Shenandoah","Traditional"));
+        songs.add(new Song("00010","Home on the Range","Traditional"));
     }
-
-    private void showShell() {
-        root = column(); root.setBackgroundColor(BG);
-        header = column(); header.setPadding(dp(18), dp(16), dp(18), dp(8));
-        LinearLayout top = new LinearLayout(this); top.setGravity(Gravity.CENTER_VERTICAL);
-        TextView brand = label("CINE", 25, WHITE, true); TextView ko = label("-KO", 25, ACCENT, true);
-        top.addView(brand); top.addView(ko); View spacer = new View(this); top.addView(spacer, new LinearLayout.LayoutParams(0,1,1));
-        TextView settings = label("⚙", 24, WHITE, true); settings.setPadding(dp(12),0,dp(4),0); settings.setOnClickListener(v -> showApiKeyDialog()); top.addView(settings);
-        header.addView(top);
-        EditText search = new EditText(this); search.setSingleLine(true); search.setTextColor(WHITE); search.setHintTextColor(MUTED);
-        search.setHint("Search movies and series"); search.setCompoundDrawablesWithIntrinsicBounds(android.R.drawable.ic_menu_search,0,0,0);
-        search.setPadding(dp(14),0,dp(14),0); search.setBackground(bg(PANEL,14)); search.setTextSize(15);
-        LinearLayout.LayoutParams sp = new LinearLayout.LayoutParams(-1,dp(48)); sp.topMargin=dp(14); header.addView(search,sp);
-        search.setOnEditorActionListener((v, action, event) -> { String q=search.getText().toString().trim(); if(!q.isEmpty()){ query=q; tab="Search"; showTabContent(); searchCatalog(q); } return true; });
-        root.addView(header);
-        FrameLayout frame = new FrameLayout(this); content = column(); ScrollView scroll = new ScrollView(this); scroll.setFillViewport(true); scroll.addView(content); frame.addView(scroll);
-        root.addView(frame,new LinearLayout.LayoutParams(-1,0,1));
-        LinearLayout nav = new LinearLayout(this); nav.setGravity(Gravity.CENTER); nav.setBackgroundColor(Color.rgb(17,19,28)); nav.setPadding(dp(4),dp(8),dp(4),dp(8));
-        String[] tabs={"Home","Movies","Series","My List"};
-        for(String name:tabs){ TextView b=label(name,12,name.equals(tab)?ACCENT:MUTED,true); b.setGravity(Gravity.CENTER); b.setPadding(dp(8),dp(8),dp(8),dp(8)); nav.addView(b,new LinearLayout.LayoutParams(0,dp(42),1)); b.setOnClickListener(v->{tab=name;showShellContent();}); }
-        root.addView(nav); setContentView(root);
+    private void build(){
+        root=vertical();root.setBackgroundColor(BLACK);
+        LinearLayout top=vertical();top.setPadding(dp(16),dp(12),dp(16),dp(10));
+        LinearLayout banner=vertical();banner.setBackground(shape(Color.argb(220,12,13,15),22,2));banner.setClipToOutline(true);
+        LinearLayout titleRow=new LinearLayout(this);titleRow.setGravity(Gravity.CENTER_VERTICAL);titleRow.setPadding(dp(18),dp(12),dp(16),dp(10));
+        TextView note=text("♫",30,YELLOW,true);titleRow.addView(note);TextView heading=text("  NEW SONG",23,WHITE,true);heading.setTypeface(Typeface.create("sans-serif",Typeface.BOLD_ITALIC));titleRow.addView(heading);
+        banner.addView(titleRow);View line=new View(this);line.setBackgroundColor(YELLOW);banner.addView(line,new LinearLayout.LayoutParams(-1,dp(2)));
+        LinearLayout newSongs=vertical();newSongs.setPadding(dp(14),dp(4),dp(14),dp(8));
+        String[][] latest={{"10143","Na Para Bang","Mariah Deborah"},{"10182","SIGABO","Yeng Constantino"},{"27602","Multo","Cup of Joe"},{"28023","Pahina","Cup of Joe"},{"27764","Sarangola","Ben&Ben"},{"28430","Kalapastangan","Fitterkarma"},{"25022","Saksi Ang Langit","December Avenue"},{"28495","Libu-Libong Buwan (Uuwian)","Kyle Raphael"},{"28574","Ikaw Lang Patutunguhan","Amiel Sol"},{"27727","Nailang","Le John"}};
+        for(String[] row:latest){LinearLayout r=new LinearLayout(this);r.setGravity(Gravity.CENTER_VERTICAL);r.setPadding(dp(2),dp(9),dp(2),dp(9));
+            TextView n=text(row[0],15,WHITE,true);n.setWidth(dp(82));r.addView(n);
+            TextView t=text(row[1],15,WHITE,true);t.setLayoutParams(new LinearLayout.LayoutParams(0,-2,1));r.addView(t);
+            TextView a=text(row[2],15,YELLOW,true);a.setGravity(Gravity.RIGHT);r.addView(a);
+            newSongs.addView(r);View divider=new View(this);divider.setBackgroundColor(0x66777777);newSongs.addView(divider,new LinearLayout.LayoutParams(-1,dp(1)));
+        }
+        banner.addView(newSongs);TextView foot=text("▰ ▰ ▰     ♫     ▰ ▰ ▰",17,YELLOW,true);foot.setGravity(Gravity.CENTER);foot.setPadding(0,dp(4),0,dp(8));banner.addView(foot);
+        top.addView(banner);root.addView(top);
+        LinearLayout searchRow=new LinearLayout(this);searchRow.setGravity(Gravity.CENTER_VERTICAL);searchRow.setPadding(dp(14),dp(10),dp(14),dp(8));
+        Button close=button("×");close.setTextSize(24);searchRow.addView(close,new LinearLayout.LayoutParams(dp(54),dp(54)));close.setOnClickListener(v->{search.setText("");});
+        search=new EditText(this);search.setSingleLine(true);search.setTextColor(WHITE);search.setHintTextColor(0xffa7a7a7);search.setHint("⌕  Title, artist or number");search.setTextSize(16);search.setPadding(dp(16),0,dp(12),0);search.setBackground(shape(PANEL,18,0));LinearLayout.LayoutParams ep=new LinearLayout.LayoutParams(0,dp(54),1);ep.leftMargin=dp(12);searchRow.addView(search,ep);root.addView(searchRow);
+        search.addTextChangedListener(new android.text.TextWatcher(){public void beforeTextChanged(CharSequence s,int st,int c,int a){}public void onTextChanged(CharSequence s,int st,int before,int count){render(s.toString());}public void afterTextChanged(android.text.Editable e){}});
+        View sep=new View(this);sep.setBackgroundColor(0xff303238);root.addView(sep,new LinearLayout.LayoutParams(-1,dp(1)));
+        ScrollView scroll=new ScrollView(this);list=vertical();list.setPadding(dp(16),dp(4),dp(16),dp(10));scroll.addView(list);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
+        nowPlaying=vertical();nowPlaying.setPadding(dp(16),dp(10),dp(16),dp(12));nowPlaying.setBackgroundColor(0xff101115);
+        playingTitle=text("VIDEO KARAOKE • SONGBOOK",16,YELLOW,true);nowPlaying.addView(playingTitle);
+        lyric=text("Pumili ng kanta o magdagdag ng sarili mong audio/video file.",18,WHITE,true);lyric.setGravity(Gravity.CENTER);lyric.setPadding(dp(8),dp(16),dp(8),dp(16));nowPlaying.addView(lyric);
+        LinearLayout controls=new LinearLayout(this);controls.setGravity(Gravity.CENTER);String[] names={"|◀","▶","Ⅱ","■","▶|","＋ FILE"};for(String name:names){Button b=button(name);LinearLayout.LayoutParams p=new LinearLayout.LayoutParams(0,dp(48),name.equals("＋ FILE")?1.5f:1);p.setMargins(dp(3),0,dp(3),0);controls.addView(b,p);b.setOnClickListener(v->control(name));}nowPlaying.addView(controls);
+        root.addView(nowPlaying);setContentView(root);render("");
     }
-
-    private void showShellContent(){ showTabContent(); if(tab.equals("Home"))loadHome(); else if(tab.equals("Movies"))loadList("movie","/movie/popular"); else if(tab.equals("Series"))loadList("tv","/tv/popular"); else loadSaved(); }
-    private void showTabContent(){ content.removeAllViews(); content.setPadding(dp(16),dp(10),dp(16),dp(24)); }
-    private void heading(String s){ TextView t=label(s,20,WHITE,true); t.setPadding(0,dp(14),0,dp(10)); content.addView(t); }
-    private void message(String s){ TextView t=label(s,14,MUTED,false); t.setPadding(0,dp(12),0,dp(12)); content.addView(t); }
-    private void loadHome(){ showTabContent(); heading("Welcome to CINE-KO"); message("Discover movies and series worth watching."); loadSection("Trending Movies","/trending/movie/week","movie"); loadSection("Popular Series","/tv/popular","tv"); }
-    private void loadList(String type,String path){ showTabContent(); heading(type.equals("movie")?"Popular Movies":"Popular Series"); fetch(path, json -> renderGrid(json.optJSONArray("results"),type)); }
-    private void loadSection(String title,String path,String type){
-        heading(title); LinearLayout row=new LinearLayout(this); row.setOrientation(LinearLayout.HORIZONTAL);
-        HorizontalScrollView hs=new HorizontalScrollView(this); hs.setHorizontalScrollBarEnabled(false); hs.addView(row); content.addView(hs);
-        fetch(path,json->{ JSONArray arr=json.optJSONArray("results"); if(arr==null)return; for(int i=0;i<Math.min(arr.length(),15);i++){ JSONObject item=arr.optJSONObject(i); if(item!=null) row.addView(poster(item,type,dp(124),dp(190))); }});
+    private void render(String q){if(list==null)return;list.removeAllViews();String needle=q.toLowerCase(Locale.ROOT).trim();int count=0;
+        for(int i=0;i<songs.size();i++){Song s=songs.get(i);if(!(s.number+" "+s.title+" "+s.artist).toLowerCase(Locale.ROOT).contains(needle))continue;final int index=i;
+            LinearLayout row=new LinearLayout(this);row.setGravity(Gravity.CENTER_VERTICAL);row.setPadding(dp(6),dp(12),dp(6),dp(12));
+            TextView num=text(s.number,15,YELLOW,false);num.setWidth(dp(78));row.addView(num);
+            LinearLayout details=vertical();details.addView(text(s.title,18,WHITE,false));details.addView(text(s.artist,14,0xffaaaaaa,false));row.addView(details,new LinearLayout.LayoutParams(0,-2,1));
+            TextView play=text(s.uri==null?"＋":"▶",20,YELLOW,true);row.addView(play);row.setOnClickListener(v->{if(s.uri!=null)playSong(index);else chooseMedia(index);});list.addView(row);
+            View divider=new View(this);divider.setBackgroundColor(0xff303238);list.addView(divider,new LinearLayout.LayoutParams(-1,dp(1)));count++;
+        }
+        if(count==0){TextView empty=text("Walang kanta. Magdagdag ng audio/video file.",15,MUTED,false);empty.setPadding(dp(8),dp(24),0,dp(24));list.addView(empty);}
     }
-    private View poster(JSONObject item,String type,int width,int height){
-        LinearLayout card=column(); card.setPadding(dp(5),dp(4),dp(5),dp(8)); card.setLayoutParams(new LinearLayout.LayoutParams(width,-2));
-        ImageView image=new ImageView(this); image.setBackground(bg(PANEL,10)); image.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        String path=item.optString("poster_path",""); if(!path.equals("null")&&!path.isEmpty()) loadImage(IMG+path,image);
-        card.addView(image,new LinearLayout.LayoutParams(-1,height));
-        String title=item.optString("title",item.optString("name","Untitled")); TextView name=label(title,13,WHITE,true); name.setMaxLines(2); name.setPadding(0,dp(6),0,0); card.addView(name);
-        card.setOnClickListener(v->openDetails(item,type)); return card;
-    }
-    private void renderGrid(JSONArray arr,String type){ if(arr==null){message("No results found.");return;} LinearLayout row=null; for(int i=0;i<arr.length();i++){ if(i%2==0){row=new LinearLayout(this); row.setOrientation(LinearLayout.HORIZONTAL); content.addView(row);} JSONObject o=arr.optJSONObject(i); if(o!=null){row.addView(poster(o,type,dp(150),dp(218)),new LinearLayout.LayoutParams(0,-2,1));} } }
-    private void searchCatalog(String q){ showTabContent(); heading("Search results"); fetch("/search/multi?query="+enc(q),json->{ JSONArray a=json.optJSONArray("results"); JSONArray filtered=new JSONArray(); if(a!=null)for(int i=0;i<a.length();i++){JSONObject o=a.optJSONObject(i); if(o!=null){String type=o.optString("media_type"); if(type.equals("movie")||type.equals("tv"))filtered.put(o);}} renderMixed(filtered); }); }
-    private void renderMixed(JSONArray arr){ if(arr==null||arr.length()==0){message("Walang nahanap. Subukan ang ibang title.");return;} for(int i=0;i<arr.length();i++){JSONObject o=arr.optJSONObject(i);if(o!=null)content.addView(poster(o,o.optString("media_type"),dp(145),dp(210)));} }
-    private void loadSaved(){ showTabContent(); heading("My List"); JSONArray saved=new JSONArray(); try{saved=new JSONArray(prefs.getString("saved","[]"));}catch(Exception ignored){} renderMixed(saved); }
-    private void openDetails(JSONObject item,String type){
-        currentType=type; currentShow=item;
-        String id=item.optString("id"); String path="/"+type+"/"+id+"?append_to_response=videos";
-        fetch(path,detail->{ showTabContent(); String title=detail.optString("title",detail.optString("name","Details")); heading(title);
-            TextView overview=label(detail.optString("overview","No description available."),14,MUTED,false); content.addView(overview);
-            LinearLayout actions=new LinearLayout(this); Button play=button("▶ Play Trailer"); actions.addView(play,new LinearLayout.LayoutParams(0,dp(48),1)); play.setOnClickListener(v->playTrailer(detail));
-            Button save=button("＋ My List"); LinearLayout.LayoutParams bp=new LinearLayout.LayoutParams(0,dp(48),1); bp.leftMargin=dp(8); actions.addView(save,bp); save.setOnClickListener(v->saveItem(item));
-            content.addView(actions); Button stream=button("Play authorized video URL"); LinearLayout.LayoutParams streamP=new LinearLayout.LayoutParams(-1,dp(46)); streamP.topMargin=dp(8); content.addView(stream,streamP); stream.setOnClickListener(v->promptVideoUrl(title)); space(content,12);
-            if(type.equals("tv")){ heading("Seasons & Episodes"); JSONArray seasons=detail.optJSONArray("seasons"); if(seasons!=null)for(int i=0;i<seasons.length();i++){JSONObject s=seasons.optJSONObject(i);if(s!=null&&s.optInt("season_number")>0){Button sb=button("Season "+s.optInt("season_number")+"  ·  "+s.optInt("episode_count")+" episodes"); content.addView(sb); sb.setOnClickListener(v->loadSeason(id,s.optInt("season_number")));}}}
-            else { JSONArray vids=detail.optJSONObject("videos")==null?null:detail.optJSONObject("videos").optJSONArray("results"); if(vids!=null&&vids.length()>0) message("Available official trailers can be played above."); }
-        });
-    }
-    private void loadSeason(String showId,int season){ fetch("/tv/"+showId+"/season/"+season,json->{ currentEpisodes=json.optJSONArray("episodes"); episodeIndex=-1; showTabContent(); heading("Season "+season); if(currentEpisodes==null)return; for(int i=0;i<currentEpisodes.length();i++){final int index=i;JSONObject ep=currentEpisodes.optJSONObject(i);if(ep==null)continue;Button b=button("Episode "+ep.optInt("episode_number")+"  ·  "+ep.optString("name")); content.addView(b); b.setOnClickListener(v->{episodeIndex=index;new AlertDialog.Builder(this).setTitle("Episode "+ep.optInt("episode_number")).setItems(new String[]{"Official preview","Play authorized video URL"},(d,which)->{if(which==0)playEpisode(ep);else promptVideoUrl("S"+ep.optInt("season_number")+" E"+ep.optInt("episode_number")+" · "+ep.optString("name"));}).show();});} }); }
-    private void playEpisode(JSONObject ep){ String title="S"+ep.optInt("season_number")+" E"+ep.optInt("episode_number")+" · "+ep.optString("name"); fetch("/tv/"+currentShow.optString("id")+"/season/"+ep.optInt("season_number")+"/episode/"+ep.optInt("episode_number")+"?append_to_response=videos",detail->{playVideo(detail,title);}); }
-    private void playTrailer(JSONObject detail){ JSONObject videos=detail.optJSONObject("videos"); JSONArray results=videos==null?null:videos.optJSONArray("results"); if(results!=null)for(int i=0;i<results.length();i++){JSONObject v=results.optJSONObject(i);if(v!=null&&v.optString("site").equalsIgnoreCase("YouTube")&&(v.optString("type").equals("Trailer")||v.optString("type").equals("Teaser"))){playYoutube(v.optString("key"),detail.optString("title",detail.optString("name","Trailer")));return;}} toast("Walang official YouTube trailer na available."); }
-    private void playVideo(JSONObject detail,String title){ JSONObject videos=detail.optJSONObject("videos");JSONArray a=videos==null?null:videos.optJSONArray("results");if(a!=null)for(int i=0;i<a.length();i++){JSONObject v=a.optJSONObject(i);if(v!=null&&v.optString("site").equalsIgnoreCase("YouTube")&&v.optString("type").equals("Trailer")){playYoutube(v.optString("key"),title);return;}} toast("Walang official episode preview/video source. Puwede ang next episode list."); }
-    private void promptVideoUrl(String title){
-        EditText input=new EditText(this); input.setSingleLine(true); input.setTextColor(WHITE); input.setHintTextColor(MUTED); input.setHint("https://…"); input.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_URI);
-        new AlertDialog.Builder(this).setTitle("Play video").setMessage("I-paste lamang ang video URL na pag-aari mo o may pahintulot kang i-stream.").setView(input).setPositiveButton("Play",(d,w)->{String url=input.getText().toString().trim();if(url.startsWith("https://")||url.startsWith("http://"))playDirectUrl(url,title);else toast("Maglagay ng valid http/https video URL.");}).setNegativeButton("Cancel",null).show();
-    }
-    private void playDirectUrl(String url,String title){
-        showTabContent(); heading(title);
-        VideoView video=new VideoView(this); video.setBackgroundColor(Color.BLACK);
-        MediaController controls=new MediaController(this); controls.setAnchorView(video); video.setMediaController(controls);
-        content.addView(video,new LinearLayout.LayoutParams(-1,dp(230)));
-        video.setVideoURI(android.net.Uri.parse(url)); video.setOnPreparedListener(mp->{mp.setLooping(false);video.start();});
-        video.setOnErrorListener((mp,what,extra)->{toast("Hindi mabuksan ang video. Check format, URL, at stream permissions.");return true;});
-        if(episodeIndex>=0){LinearLayout row=new LinearLayout(this);Button prev=button("Previous");Button next=button("Next Episode");row.addView(prev,new LinearLayout.LayoutParams(0,dp(48),1));row.addView(next,new LinearLayout.LayoutParams(0,dp(48),1));content.addView(row);prev.setOnClickListener(v->playAdjacent(-1));next.setOnClickListener(v->playAdjacent(1));}
-    }
-    private void playYoutube(String key,String title){
-        showTabContent(); heading(title); WebView web=new WebView(this); web.setBackgroundColor(Color.BLACK); web.getSettings().setJavaScriptEnabled(true); web.getSettings().setMediaPlaybackRequiresUserGesture(false); web.setWebChromeClient(new WebChromeClient()); web.setWebViewClient(new WebViewClient());
-        String html="<!doctype html><html><body style='margin:0;background:#000'><iframe width='100%' height='100%' src='https://www.youtube-nocookie.com/embed/"+key+"?autoplay=1&playsinline=1' frameborder='0' allow='autoplay; encrypted-media; picture-in-picture' allowfullscreen></iframe></body></html>";
-        content.addView(web,new LinearLayout.LayoutParams(-1,dp(230))); web.loadDataWithBaseURL("https://www.youtube-nocookie.com",html,"text/html","UTF-8",null);
-        if(episodeIndex>=0){LinearLayout controls=new LinearLayout(this);Button prev=button("Previous");Button next=button("Next Episode");controls.addView(prev,new LinearLayout.LayoutParams(0,dp(48),1));controls.addView(next,new LinearLayout.LayoutParams(0,dp(48),1));content.addView(controls);prev.setOnClickListener(v->playAdjacent(-1));next.setOnClickListener(v->playAdjacent(1));}
-        message("Official trailer/preview playback. Full movies and episodes require a licensed streaming source.");
-    }
-    private void playAdjacent(int delta){int n=episodeIndex+delta;if(n<0||n>=currentEpisodes.length()){toast("Wala nang episode sa direksiyong iyon.");return;}episodeIndex=n;JSONObject ep=currentEpisodes.optJSONObject(n);if(ep!=null)playEpisode(ep);}
-    private void saveItem(JSONObject item){try{JSONArray a=new JSONArray(prefs.getString("saved","[]"));boolean exists=false;for(int i=0;i<a.length();i++)if(a.optJSONObject(i)!=null&&a.optJSONObject(i).optString("id").equals(item.optString("id"))){exists=true;break;}if(!exists)a.put(item);prefs.edit().putString("saved",a.toString()).apply();toast(exists?"Nasa My List na ito.":"Added to My List.");}catch(Exception e){toast("Hindi na-save.");}}
-    private Button button(String text){Button b=new Button(this);b.setText(text);b.setTextColor(WHITE);b.setAllCaps(false);b.setTextSize(13);b.setBackground(bg(ACCENT,12));return b;}
-    private void showApiKeyDialog(){new AlertDialog.Builder(this).setTitle("CINE-KO Server").setMessage("Connected API backend: https://cine-ko-api.onrender.com\n\nThe TMDB token is stored privately in the Render server environment. If the catalog is unavailable, check that TMDB_API_TOKEN is set in Render → Environment.").setPositiveButton("OK",null).show();}
-    private interface JsonCallback{void done(JSONObject json);}
-    private void fetch(String path,JsonCallback callback){ worker.execute(()->{JSONObject result=null;try{URL url=new URL(API+path);HttpURLConnection c=(HttpURLConnection)url.openConnection();c.setRequestMethod("GET");c.setConnectTimeout(12000);c.setReadTimeout(15000);c.setRequestProperty("accept","application/json");InputStream in=(c.getResponseCode()<400?c.getInputStream():c.getErrorStream());ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] buf=new byte[4096];int n;while((n=in.read(buf))>0)out.write(buf,0,n);String body=out.toString("UTF-8");if(c.getResponseCode()<400)result=new JSONObject(body);else{String err=new JSONObject(body).optString("status_message","API request failed");final String msg=err;runOnUiThread(()->toast(msg));}in.close();c.disconnect();}catch(Exception e){runOnUiThread(()->toast("Network/API error. Check CINE-KO server and TMDB setup."));}final JSONObject data=result;if(data!=null)runOnUiThread(()->callback.done(data));});}
-    private void loadImage(String url,ImageView view){worker.execute(()->{try{HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection();c.setConnectTimeout(8000);c.setReadTimeout(10000);android.graphics.Bitmap bitmap=android.graphics.BitmapFactory.decodeStream(c.getInputStream());c.disconnect();if(bitmap!=null)runOnUiThread(()->view.setImageBitmap(bitmap));}catch(Exception ignored){}});}
-    private String enc(String s){try{return URLEncoder.encode(s,"UTF-8");}catch(Exception e){return s;}}
-    private void toast(String s){Toast.makeText(this,s,Toast.LENGTH_LONG).show();}
-    @Override protected void onDestroy(){super.onDestroy();worker.shutdownNow();}
+    private void chooseMedia(int index){currentIndex=index;Intent i=new Intent(Intent.ACTION_OPEN_DOCUMENT);i.setType("*/*");i.putExtra(Intent.EXTRA_MIME_TYPES,new String[]{"audio/*","video/*"});i.addCategory(Intent.CATEGORY_OPENABLE);startActivityForResult(i,41);}
+    @Override protected void onActivityResult(int req,int res,Intent data){super.onActivityResult(req,res,data);if(req==41&&res==RESULT_OK&&data!=null&&data.getData()!=null){Uri u=data.getData();getContentResolver().takePersistableUriPermission(u,Intent.FLAG_GRANT_READ_URI_PERMISSION);songs.get(currentIndex).uri=u;playSong(currentIndex);render(search.getText().toString());}}
+    private void playSong(int index){currentIndex=index;Song s=songs.get(index);playingTitle.setText(s.title+"  •  "+s.artist);lyric.setText("♫  "+s.title+"  ♫\n\nLyrics file can be added with the song.");String type=getContentResolver().getType(s.uri);videoMode=type!=null&&type.startsWith("video");if(videoMode){if(player!=null){player.release();player=null;}if(video==null){video=new VideoView(this);nowPlaying.addView(video,1,new LinearLayout.LayoutParams(-1,dp(180)));}video.setVisibility(View.VISIBLE);video.setVideoURI(s.uri);video.setOnPreparedListener(mp->video.start());}else{if(video!=null)video.setVisibility(View.GONE);try{if(player!=null)player.release();player=new MediaPlayer();player.setDataSource(this,s.uri);player.setOnPreparedListener(mp->mp.start());player.setOnErrorListener((mp,w,e)->{toast("Hindi mabuksan ang audio file.");return true;});player.prepareAsync();}catch(Exception e){toast("Hindi mabuksan ang audio file.");}}}
+    private void control(String action){if(action.equals("＋ FILE")){chooseMedia(Math.max(0,currentIndex));return;}try{if(action.equals("▶")){if(videoMode&&video!=null)video.start();else if(player!=null)player.start();}else if(action.equals("Ⅱ")){if(videoMode&&video!=null)video.pause();else if(player!=null&&player.isPlaying())player.pause();}else if(action.equals("■")){if(videoMode&&video!=null)video.stopPlayback();else if(player!=null){player.stop();player.release();player=null;}}else if(action.equals("|◀")){if(currentIndex>0)playSong(currentIndex-1);}else if(action.equals("▶|")){if(currentIndex+1<songs.size())playSong(currentIndex+1);}}catch(Exception e){toast("Pumili muna ng kanta.");}}
+    private void toast(String s){Toast.makeText(this,s,Toast.LENGTH_SHORT).show();}
+    @Override protected void onDestroy(){super.onDestroy();if(player!=null){player.release();player=null;}}
 }

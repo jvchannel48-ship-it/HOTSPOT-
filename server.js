@@ -2,6 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const { rateLimit } = require("express-rate-limit");
+const Redis = require("ioredis");
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -39,7 +40,9 @@ app.get("/healthz", (_req, res) => {
   res.json({
     ok: true,
     service: "cine-ko-api",
-    tmdbConfigured: Boolean(TMDB_API_TOKEN)
+    tmdbConfigured: Boolean(TMDB_API_TOKEN),
+    redisConfigured: Boolean(redis),
+    redisReady: Boolean(redis && redis.status === "ready")
   });
 });
 
@@ -64,7 +67,7 @@ app.get("/api/tmdb/*", async (req, res) => {
       if (typeof value === "string") target.searchParams.set(key, value);
     }
 
-    const upstream = await fetch(target, {
+    const cacheKey = "tmdb:" + target.toString();\n    if (redis && redis.status === "ready") {\n      try {\n        const cached = await redis.get(cacheKey);\n        if (cached) return res.type("application/json").set("X-CINE-KO-Cache", "HIT").send(cached);\n      } catch (error) { console.error("Redis read failed:", error.message); }\n    }\n\n    const upstream = await fetch(target, {
       headers: {
         Authorization: `Bearer ${TMDB_API_TOKEN}`,
         Accept: "application/json"

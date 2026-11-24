@@ -7,7 +7,19 @@ const Redis = require("ioredis");
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const TMDB_API_TOKEN = process.env.TMDB_API_TOKEN;
-const TMDB_BASE_URL = "https://api.themoviedb.org";
+const TMDB_BASE_URL = "https://api.themoviedb";
+const redis = process.env.REDIS_URL
+  ? new Redis(process.env.REDIS_URL, {
+      lazyConnect: true,
+      maxRetriesPerRequest: 1,
+      retryStrategy: (times) => Math.min(times * 500, 5000)
+    })
+  : null;
+
+if (redis) {
+  redis.on("error", (error) => console.error("Redis connection error:", error.message));
+  redis.connect().catch((error) => console.error("Redis initial connection failed:", error.message));
+}
 
 app.disable("x-powered-by");
 app.use(helmet({ crossOriginResourcePolicy: false }));
@@ -46,13 +58,10 @@ app.get("/healthz", (_req, res) => {
   });
 });
 
-// Proxies TMDB metadata requests without exposing the TMDB bearer token to the app.
-// Example: /api/tmdb/3/movie/popular?language=en-US&page=1
+// Metadata proxy only. TMDB does not provide full movie or episode streams.
 app.get("/api/tmdb/*", async (req, res) => {
   if (!TMDB_API_TOKEN) {
-    return res.status(503).json({
-      error: "TMDB_API_TOKEN is not configured on the server."
-    });
+    return res.status(503).json({ error: "TMDB_API_TOKEN is not configured on the server." });
   }
 
   const requestedPath = req.params[0] || "";
@@ -67,7 +76,19 @@ app.get("/api/tmdb/*", async (req, res) => {
       if (typeof value === "string") target.searchParams.set(key, value);
     }
 
-    const cacheKey = "tmdb:" + target.toString();\n    if (redis && redis.status === "ready") {\n      try {\n        const cached = await redis.get(cacheKey);\n        if (cached) return res.type("application/json").set("X-CINE-KO-Cache", "HIT").send(cached);\n      } catch (error) { console.error("Redis read failed:", error.message); }\n    }\n\n    const upstream = await fetch(target, {
+    const cacheKey = "tmdb:" + target.toString();
+    if (redis && redis.status === "ready") {
+      try {
+        const cached = await redis.get(cacheKey);
+        if (cached) {
+          return res.type("application/json").set("X-CINE-KO-Cache", "HIT").send(cached);
+        }
+      } catch (error) {
+        console.error("Redis read failed:", error.message);
+      }
+    }
+
+    const upstream = await fetch(target, {
       headers: {
         Authorization: `Bearer ${TMDB_API_TOKEN}`,
         Accept: "application/json"
@@ -78,6 +99,16 @@ app.get("/api/tmdb/*", async (req, res) => {
     const body = await upstream.text();
     res.status(upstream.status);
     res.type(upstream.headers.get("content-type") || "application/json");
+
+    if (upstream.ok && redis && redis.status === "ready") {
+      try {
+        await redis.set(cacheKey, body, "EX", 300);
+      } catch (error) {
+        console.error("Redis write failed:", error.message);
+      }
+    }
+
+    res.set("X-CINE-KO-Cache", "MISS");
     return res.send(body);
   } catch (error) {
     console.error("TMDB proxy error:", error.message);

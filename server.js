@@ -154,6 +154,66 @@ app.get("/api/tmdb/*", async (req, res) => {
   }
 });
 
+
+/* Public video search and playback links from Internet Archive.
+   Only return files whose item metadata declares public-domain or Creative Commons rights. */
+app.get("/api/videos/search", async (req, res) => {
+  const q = String(req.query.q || "feature film").trim().slice(0, 100);
+  if (!q) return res.status(400).json({ error: "Enter a search term." });
+  try {
+    const params = new URLSearchParams({
+      q: `mediatype:movies AND (${q.replace(/[+\-!(){}\[\]^"~*?:\\/]/g, " " )})`,
+      "fl[]": "identifier,title,year,description,licenseurl",
+      rows: "24",
+      page: "1",
+      output: "json",
+      "sort[]": "downloads desc"
+    });
+    const upstream = await fetch("https://archive.org/advancedsearch.php?" + params, {
+      headers: { Accept: "application/json" }, signal: AbortSignal.timeout(20000)
+    });
+    if (!upstream.ok) throw new Error("Internet Archive search failed");
+    const data = await upstream.json();
+    return res.json({ results: (data.response?.docs || []).map(x => ({
+      id: x.identifier, title: x.title || x.identifier, year: x.year || "",
+      description: x.description || "", license: x.licenseurl || ""
+    })) });
+  } catch (error) {
+    console.error("Archive video search:", error.message);
+    return res.status(502).json({ error: "Video catalog is temporarily unavailable." });
+  }
+});
+
+app.get("/api/videos/:identifier", async (req, res) => {
+  const id = String(req.params.identifier || "");
+  if (!/^[a-zA-Z0-9._-]{1,120}$/.test(id)) return res.status(400).json({ error: "Invalid video id." });
+  try {
+    const upstream = await fetch("https://archive.org/metadata/" + encodeURIComponent(id), {
+      headers: { Accept: "application/json" }, signal: AbortSignal.timeout(20000)
+    });
+    if (!upstream.ok) throw new Error("Internet Archive metadata failed");
+    const data = await upstream.json();
+    const license = String(data.metadata?.licenseurl || data.metadata?.license || "").toLowerCase();
+    if (!(license.includes("publicdomain") || license.includes("creativecommons.org"))) {
+      return res.status(403).json({ error: "This item does not declare a public-domain or Creative Commons license, so playback is not enabled." });
+    }
+    const files = (data.files || []).filter(f =>
+      /\.(mp4|m4v|webm)$/i.test(f.name || "") &&
+      !f.name.includes("__ia_thumb") && !f.source?.includes("derivative")
+    ).sort((a,b) => Number(b.size || 0) - Number(a.size || 0));
+    const file = files[0];
+    if (!file) return res.status(404).json({ error: "No browser-playable MP4, M4V, or WebM file was found." });
+    return res.json({
+      id, title: data.metadata?.title || id, license,
+      videoUrl: "https://archive.org/download/" + encodeURIComponent(id) + "/" + encodeURIComponent(file.name),
+      format: file.format || file.name.split(".").pop().toUpperCase()
+    });
+  } catch (error) {
+    console.error("Archive video metadata:", error.message);
+    return res.status(502).json({ error: "Unable to retrieve this video right now." });
+  }
+});
+
 app.use((err, _req, res, _next) => {
   if (err.message === "Origin is not allowed by CORS") {
     return res.status(403).json({ error: err.message });

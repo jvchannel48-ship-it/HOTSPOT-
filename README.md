@@ -1,18 +1,11 @@
-# VIDEO KARAOKE
+# RJ PUBLIC CCTV
 
-Android karaoke SongBook app inspired by the supplied reference screenshot.
+Android app for browsing publicly published camera and webcam sources.
 
-## Current features
-- Yellow/black SongBook interface with NEW SONG panel.
-- Search by song number, title, or artist.
-- Starter catalog of traditional/public-domain song titles.
-- Import audio or video files from device storage.
-- Playback controls: previous, play, pause, stop, next.
-- Song metadata is a catalog only; audio/video is not bundled unless separately licensed.
+- Search camera sources by name or location.
+- Open the publisher's own public camera viewer inside the app or in a browser.
+- Only intentionally public camera directories and official information pages are listed.
+- A directory entry does not guarantee a working continuous live video. Some cameras provide periodically refreshed still images.
+- No private, unsecured, or access-controlled CCTV feeds are collected or exposed.
 
-## Build
-Open this repository in Android Studio and build the `app` module.
-Application ID: `com.jvchannel48.videokaraoke`
-
-## Notes
-The starter catalog does not contain copyrighted recordings. Add only audio/video files you own or are licensed to use. Lyrics display and second-phone remote pairing are planned follow-up features.
+Build the debug APK with GitHub Actions: Actions → RJ PUBLIC CCTV Android APK → latest run → Artifacts → RJ-PUBLIC-CCTV-debug.

@@ -3,6 +3,7 @@ const cors = require("cors");
 const helmet = require("helmet");
 const { rateLimit } = require("express-rate-limit");
 const Redis = require("ioredis");
+const path = require("path");
 
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
@@ -45,7 +46,7 @@ app.use("/api/", rateLimit({
 }));
 
 app.get("/", (_req, res) => {
-  res.type("text").send("CINE-KO API is running. See /healthz.");
+  res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
 app.get("/healthz", (_req, res) => {

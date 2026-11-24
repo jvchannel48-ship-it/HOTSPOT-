@@ -1,16 +1,12 @@
-plugins {
-    id 'com.android.application'
-}
-
+plugins { id 'com.android.application' }
 android {
     namespace 'com.jvchannel48.hotspotcontrol'
     compileSdk 35
-
     defaultConfig {
-        applicationId 'com.jvchannel48.cineko'
+        applicationId 'com.jvchannel48.videokaraoke'
         minSdk 23
         targetSdk 35
-        versionCode 2
+        versionCode 1
         versionName '1.0.0'
     }
 }

@@ -23,7 +23,20 @@ if (redis) {
 }
 
 app.disable("x-powered-by");
-app.use(helmet({ crossOriginResourcePolicy: false }));
+app.use(helmet({
+  crossOriginResourcePolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "https://image.tmdb.org"],
+      frameSrc: ["https://www.youtube-nocookie.com"],
+      connectSrc: ["'self'"],
+      upgradeInsecureRequests: null
+    }
+  }
+}));
 
 const allowedOrigins = (process.env.CORS_ORIGINS || "*")
   .split(",").map((value) => value.trim()).filter(Boolean);

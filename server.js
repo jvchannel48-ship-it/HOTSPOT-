@@ -72,6 +72,30 @@ app.get("/healthz", (_req, res) => {
   });
 });
 
+
+// Keyless public Cinemeta metadata proxy (no TMDB token required).
+app.get("/api/cinemeta/*", async (req, res) => {
+  const requestedPath = req.params[0] || "";
+  if (!/^(catalog|meta)\/[a-zA-Z0-9_./=-]+\.json$/.test(requestedPath) ||
+      requestedPath.includes("..")) {
+    return res.status(400).json({ error: "Invalid Cinemeta path." });
+  }
+  try {
+    const upstream = await fetch("https://v3-cinemeta.strem.io/" + requestedPath, {
+      headers: { Accept: "application/json" },
+      signal: AbortSignal.timeout(15000)
+    });
+    const body = await upstream.text();
+    res.status(upstream.status);
+    res.type(upstream.headers.get("content-type") || "application/json");
+    res.set("Cache-Control", "public, max-age=300");
+    return res.send(body);
+  } catch (error) {
+    console.error("Cinemeta proxy error:", error.message);
+    return res.status(502).json({ error: "Public metadata service is temporarily unavailable." });
+  }
+});
+
 // Metadata proxy only. TMDB does not provide full movie or episode streams.
 app.get("/api/tmdb/*", async (req, res) => {
   if (!TMDB_API_TOKEN) {

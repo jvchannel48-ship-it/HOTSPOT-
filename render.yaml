@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: cine-ko-api
+    runtime: node
+    plan: free
+    region: singapore
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: TMDB_API_TOKEN
+        sync: false
+      - key: CORS_ORIGINS
+        value: "*"

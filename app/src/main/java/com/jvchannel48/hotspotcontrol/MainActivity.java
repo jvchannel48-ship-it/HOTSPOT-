@@ -26,7 +26,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends Activity {
-    private static final String API = "https://api.themoviedb.org/3";
+    private static final String API = "https://cine-ko-api.onrender.com/api/tmdb/3";
     private static final String IMG = "https://image.tmdb.org/t/p/w500";
     private static final int BG = Color.rgb(10, 12, 19), PANEL = Color.rgb(25, 29, 41), WHITE = Color.WHITE, MUTED = Color.rgb(166, 174, 191), ACCENT = Color.rgb(229, 31, 67);
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
@@ -46,15 +46,14 @@ public class MainActivity extends Activity {
     }
     private LinearLayout column() { LinearLayout l = new LinearLayout(this); l.setOrientation(LinearLayout.VERTICAL); return l; }
     private void space(LinearLayout p, int h) { View v = new View(this); p.addView(v, new LinearLayout.LayoutParams(1, dp(h))); }
-    private String apiKey() { return prefs.getString("tmdb_key", "").trim(); }
+    private String apiKey() { return "server"; }
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         prefs = getSharedPreferences("cineko", MODE_PRIVATE);
         getWindow().setStatusBarColor(BG); getWindow().setNavigationBarColor(BG);
         showShell();
-        if (apiKey().isEmpty()) showApiKeyDialog();
-        else loadHome();
+        loadHome();
     }
 
     private void showShell() {
@@ -141,9 +140,9 @@ public class MainActivity extends Activity {
     private void playAdjacent(int delta){int n=episodeIndex+delta;if(n<0||n>=currentEpisodes.length()){toast("Wala nang episode sa direksiyong iyon.");return;}episodeIndex=n;JSONObject ep=currentEpisodes.optJSONObject(n);if(ep!=null)playEpisode(ep);}
     private void saveItem(JSONObject item){try{JSONArray a=new JSONArray(prefs.getString("saved","[]"));boolean exists=false;for(int i=0;i<a.length();i++)if(a.optJSONObject(i)!=null&&a.optJSONObject(i).optString("id").equals(item.optString("id"))){exists=true;break;}if(!exists)a.put(item);prefs.edit().putString("saved",a.toString()).apply();toast(exists?"Nasa My List na ito.":"Added to My List.");}catch(Exception e){toast("Hindi na-save.");}}
     private Button button(String text){Button b=new Button(this);b.setText(text);b.setTextColor(WHITE);b.setAllCaps(false);b.setTextSize(13);b.setBackground(bg(ACCENT,12));return b;}
-    private void showApiKeyDialog(){EditText input=new EditText(this);input.setSingleLine(true);input.setTextColor(WHITE);input.setHintTextColor(MUTED);input.setHint("TMDB API Read Access Token");input.setInputType(InputType.TYPE_CLASS_TEXT|InputType.TYPE_TEXT_VARIATION_PASSWORD);input.setText(apiKey());new AlertDialog.Builder(this).setTitle("Connect movie catalog").setMessage("Ilagay ang sarili mong TMDB API Read Access Token. Metadata at official trailer listings lang ang API; hindi ito nagbibigay ng full movie streams.").setView(input).setPositiveButton("Save", (d,w)->{String key=input.getText().toString().trim();if(!key.isEmpty()){prefs.edit().putString("tmdb_key",key).apply();loadHome();}else toast("Kailangan ang API token.");}).setNegativeButton("Cancel",null).show();}
+    private void showApiKeyDialog(){new AlertDialog.Builder(this).setTitle("CINE-KO Server").setMessage("Connected API backend: https://cine-ko-api.onrender.com\n\nThe TMDB token is stored privately in the Render server environment. If the catalog is unavailable, check that TMDB_API_TOKEN is set in Render → Environment.").setPositiveButton("OK",null).show();}
     private interface JsonCallback{void done(JSONObject json);}
-    private void fetch(String path,JsonCallback callback){ if(apiKey().isEmpty()){toast("I-set muna ang TMDB API token sa ⚙.");return;} worker.execute(()->{JSONObject result=null;try{URL url=new URL(API+path);HttpURLConnection c=(HttpURLConnection)url.openConnection();c.setRequestMethod("GET");c.setConnectTimeout(12000);c.setReadTimeout(15000);c.setRequestProperty("Authorization","Bearer "+apiKey());c.setRequestProperty("accept","application/json");InputStream in=(c.getResponseCode()<400?c.getInputStream():c.getErrorStream());ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] buf=new byte[4096];int n;while((n=in.read(buf))>0)out.write(buf,0,n);String body=out.toString("UTF-8");if(c.getResponseCode()<400)result=new JSONObject(body);else{String err=new JSONObject(body).optString("status_message","API request failed");final String msg=err;runOnUiThread(()->toast(msg));}in.close();c.disconnect();}catch(Exception e){runOnUiThread(()->toast("Network/API error. Check internet and TMDB token."));}final JSONObject data=result;if(data!=null)runOnUiThread(()->callback.done(data));});}
+    private void fetch(String path,JsonCallback callback){ worker.execute(()->{JSONObject result=null;try{URL url=new URL(API+path);HttpURLConnection c=(HttpURLConnection)url.openConnection();c.setRequestMethod("GET");c.setConnectTimeout(12000);c.setReadTimeout(15000);c.setRequestProperty("accept","application/json");InputStream in=(c.getResponseCode()<400?c.getInputStream():c.getErrorStream());ByteArrayOutputStream out=new ByteArrayOutputStream();byte[] buf=new byte[4096];int n;while((n=in.read(buf))>0)out.write(buf,0,n);String body=out.toString("UTF-8");if(c.getResponseCode()<400)result=new JSONObject(body);else{String err=new JSONObject(body).optString("status_message","API request failed");final String msg=err;runOnUiThread(()->toast(msg));}in.close();c.disconnect();}catch(Exception e){runOnUiThread(()->toast("Network/API error. Check CINE-KO server and TMDB setup."));}final JSONObject data=result;if(data!=null)runOnUiThread(()->callback.done(data));});}
     private void loadImage(String url,ImageView view){worker.execute(()->{try{HttpURLConnection c=(HttpURLConnection)new URL(url).openConnection();c.setConnectTimeout(8000);c.setReadTimeout(10000);android.graphics.Bitmap bitmap=android.graphics.BitmapFactory.decodeStream(c.getInputStream());c.disconnect();if(bitmap!=null)runOnUiThread(()->view.setImageBitmap(bitmap));}catch(Exception ignored){}});}
     private String enc(String s){try{return URLEncoder.encode(s,"UTF-8");}catch(Exception e){return s;}}
     private void toast(String s){Toast.makeText(this,s,Toast.LENGTH_LONG).show();}

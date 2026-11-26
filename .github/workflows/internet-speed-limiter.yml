@@ -10,11 +10,10 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      # Use the Android SDK preinstalled on GitHub's runner to avoid
-      # setup-android sdkmanager version mismatch errors.
-      - name: Build Speed Limiter APK
+      - name: Build Speed Limiter APK (without wrapper)
         uses: gradle/gradle-build-action@v3
         with:
+          gradle-version: '8.9'
           arguments: -p speed-limiter assembleDebug
       - uses: actions/upload-artifact@v4
         with:
